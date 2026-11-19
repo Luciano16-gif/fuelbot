@@ -7,7 +7,7 @@ Guía para agentes de código (Claude, Codex, etc.) que trabajen en este repo. E
 - Proyecto final de Robótica Industrial (FPTEN27, UNIMET), hecho en equipo por tres estudiantes.
 - Brazo 6R con la tabla DH del UR5 que reposta un carro en una estación. Simulación en CoppeliaSim controlada desde Python por la API remota ZeroMQ.
 - La escena completa (isla, surtidor, carro, sensores y el brazo) se construye desde código en `escena_coppelia.py`. No se usa ninguna escena `.ttt` de demostración, y eso es un requisito del proyecto: no lo cambies.
-- El enunciado y la rúbrica del curso no están en el repo. Si una tarea depende de un requisito concreto ("requisito 5", "objetivo general", etc.) y no está claro en el código o el README, pregunta antes de suponer.
+- Los requisitos del curso, el cronograma y la rúbrica están resumidos en `docs/requisitos.md`. Léelo antes de cualquier tarea que toque el alcance, la verificación o la entrega. Si algo no aparece ahí, pregunta antes de suponer.
 
 ## Estructura
 
