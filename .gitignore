@@ -1,0 +1,16 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+
+# CoppeliaSim (copias de respaldo de escenas)
+*.ttt.bak
+*.simscene.xml.bak
+
+# Editor / SO
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

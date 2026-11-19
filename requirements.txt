@@ -1,0 +1,6 @@
+numpy
+matplotlib
+pillow
+coppeliasim-zmqremoteapi-client
+# opcional, solo para verificar_modelo.py:
+# roboticstoolbox-python
