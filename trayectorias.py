@@ -1,5 +1,5 @@
 """
-trayectorias.py — Generación de trayectorias (Tema 9).
+trayectorias.py: Generación de trayectorias (Tema 9).
 
   - escala_quintica():   s(tau) = 10 tau^3 - 15 tau^4 + 6 tau^5
                          velocidad y aceleración nulas al inicio y al final (sin sacudidas)

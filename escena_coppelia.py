@@ -1,5 +1,5 @@
 """
-escena_coppelia.py — Construye la escena de la estación en CoppeliaSim desde Python
+escena_coppelia.py: Construye la escena de la estación en CoppeliaSim desde Python
 y ofrece las operaciones que usa el ciclo de repostaje.
 
 El brazo se arma con primitivas y articulaciones a partir de la tabla DH de modelo_dh.py:

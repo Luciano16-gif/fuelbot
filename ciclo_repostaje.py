@@ -1,5 +1,5 @@
 """
-ciclo_repostaje.py — Programa principal.
+ciclo_repostaje.py: Programa principal.
 
 Uso (con CoppeliaSim abierto, en una escena nueva y vacía):
     python ciclo_repostaje.py                 # 3 ciclos, 5 litros cada uno

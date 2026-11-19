@@ -1,5 +1,5 @@
 """
-modelo_dh.py — Modelo cinemático del brazo de repostaje (6R, tipo UR5).
+modelo_dh.py: Modelo cinemático del brazo de repostaje (6R, tipo UR5).
 
 Convención: Denavit-Hartenberg ESTÁNDAR :
     theta_i y d_i se miden sobre z_{i-1};  a_i y alpha_i se miden sobre x_i.

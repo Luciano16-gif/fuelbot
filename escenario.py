@@ -1,5 +1,5 @@
 """
-escenario.py — Geometría de la estación, del vehículo y de los sensores.
+escenario.py: Geometría de la estación, del vehículo y de los sensores.
 
 Marco MUNDO: origen en el piso bajo la base del robot; ejes paralelos a la base del robot.
 El vehículo se estaciona del lado -y del robot, alineado con el eje x.

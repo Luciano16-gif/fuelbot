@@ -1,5 +1,5 @@
 """
-verificar_modelo.py — Pruebas del modelo sin necesidad de CoppeliaSim.
+verificar_modelo.py: Pruebas del modelo sin necesidad de CoppeliaSim.
 
 1. Cinemática directa: nuestro modelo DH vs. Robotics Toolbox for Python, construida con
    la misma tabla DH, en 20 configuraciones aleatorias.  (pip install roboticstoolbox-python)

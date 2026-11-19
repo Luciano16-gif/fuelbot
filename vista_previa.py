@@ -1,5 +1,5 @@
 """
-vista_previa.py — Animación del ciclo SIN CoppeliaSim (matplotlib), a partir del mismo modelo DH.
+vista_previa.py: Animación del ciclo SIN CoppeliaSim (matplotlib), a partir del mismo modelo DH.
 Sirve para revisar el movimiento rápido; la simulación oficial es la de CoppeliaSim.
 
     python vista_previa.py            -> resultados/vista_previa.gif

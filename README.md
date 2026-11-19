@@ -1,4 +1,4 @@
-# FuelBot — Brazo robótico de repostaje automático (Robótica Industrial FPTEN27, UNIMET)
+# FuelBot: Brazo robótico de repostaje automático (Robótica Industrial FPTEN27, UNIMET)
 
 Simulación en **CoppeliaSim** controlada desde **Python** (API remota ZeroMQ).
 El robot es un brazo 6R con la tabla DH estándar del UR5; la escena (isla, surtidor,
@@ -6,7 +6,7 @@ carro, sensores y el propio brazo) se **construye desde código**, no desde una 
 
 ## Archivos
 
-| Archivo | 
+| Archivo | Descripción |
 | --- | --- |
 | `modelo_dh.py` | Tabla DH, cinemática directa, jacobiano y cinemática inversa (DLS) |
 | `trayectorias.py` | Perfil quíntico, movimiento PTP articular y lineal cartesiano |
@@ -20,7 +20,7 @@ carro, sensores y el propio brazo) se **construye desde código**, no desde una 
 
 1. **CoppeliaSim Edu** (coppeliaedu gratis): https://www.coppeliarobotics.com/ → Downloads →
    *Edu* → Windows. Instalen la versión más reciente (4.6 o superior).
-3. En una terminal (PowerShell), dentro de esta carpeta:
+2. En una terminal (PowerShell), dentro de esta carpeta:
 
    ```
    python -m pip install -r requirements.txt
