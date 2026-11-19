@@ -1,6 +1,6 @@
 # Requisitos del proyecto final (resumen de las directrices)
 
-Resumen propio de las directrices oficiales del Proyecto Final de Robótica Industrial (FPTEN27, UNIMET, trimestre septiembre a diciembre 2026). El PDF original no está en el repo; si algo no queda claro aquí, pídanselo a alguien del equipo.
+Resumen propio de las directrices oficiales del Proyecto Final de Robótica Industrial (FPTEN27, UNIMET, trimestre septiembre a diciembre 2026), cruzado con lo que hay en el repo. El texto completo está en `directrices.md` (transcripción) y `directrices-proyecto-final-fpten27.pdf` (original).
 
 ## Ruta elegida: A (simulación en CoppeliaSim)
 
