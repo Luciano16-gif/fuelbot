@@ -14,6 +14,7 @@ carro, sensores y el propio brazo) se **construye desde código**, no desde una 
 | `escena_coppelia.py` | Construye la escena en CoppeliaSim y lee/escribe articulaciones y sensores |
 | `ciclo_repostaje.py` | **Programa principal**: máquina de estados del ciclo y registro de resultados |
 | `verificar_modelo.py` | Pruebas del modelo sin simulador (FK, jacobiano, IK) |
+| `verificar_colisiones.py` | Holgura mínima del brazo con el carro y la estación en cada estado del ciclo (requiere CoppeliaSim) |
 | `vista_previa.py` | Animación rápida en matplotlib, sin simulador |
 
 ## Instalación (Windows 11)
@@ -45,6 +46,8 @@ python ciclo_repostaje.py --sin-coppelia --ciclos 10
    El script construye la escena, arranquen la simulación en modo *stepping* y corran los ciclos.
    Al terminar imprime un resumen y guarda `resultados/ciclos.csv` y `resultados/pasos.csv`.
 3. Para la corrida de verificación del objetivo general: `python ciclo_repostaje.py --ciclos 10`.
+   Para medir la holgura del brazo con el carro y la estación en esos mismos ciclos:
+   `python verificar_colisiones.py --ciclos 10` (guarda `resultados/colisiones.csv`).
 4. Para guardar la escena construida: *File → Save scene as…* (útil para entregar el `.ttt`).
 
 Opciones: `--litros 5`, `--caudal 0.6`, `--ruido-mm 1.0` (ruido del sensor), `--semilla 7`, `--dt 0.05`.
