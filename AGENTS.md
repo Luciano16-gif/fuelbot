@@ -17,6 +17,7 @@ Guía para agentes de código (Claude, Codex, etc.) que trabajen en este repo. E
 - `escena_coppelia.py`: todo lo que habla con CoppeliaSim.
 - `ciclo_repostaje.py`: programa principal y máquina de estados `LLEGADA -> DETECCION -> APROXIMACION -> INSERCION -> SURTIDO -> EXTRACCION -> REPOSO -> SALIDA`. Incluye `EscenaSinSimulador`, que imita la interfaz de la escena real para correr sin CoppeliaSim.
 - `vista_previa.py`: animación en matplotlib, sin simulador.
+- `verificar_colisiones.py`: holgura mínima del brazo con el carro y la estación (`sim.checkDistance`) en cada estado del ciclo. Solo corre con CoppeliaSim abierto y escribe `resultados/colisiones.csv`.
 - `resultados/`: CSV que genera `ciclo_repostaje.py`.
 
 ## Cómo verificar cambios
