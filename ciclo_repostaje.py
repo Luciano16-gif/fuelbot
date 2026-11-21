@@ -300,12 +300,27 @@ def argumentos_comunes(ap):
     ap.add_argument("--semilla", type=int, default=7)
 
 
-def detener_coppelia(sim, escena):
-    """Detiene la simulación, espera a que pare y vuelve a armar el carro (ver tras_detener)."""
+def detener_coppelia(sim, espera_max_s=10.0):
+    """Detiene la simulación y espera, como mucho espera_max_s, a que pare.
+    Devuelve True si paró."""
     sim.stopSimulation()
+    limite = time.time() + espera_max_s
     while sim.getSimulationState() != sim.simulation_stopped:
+        if time.time() > limite:
+            print("AVISO: la simulación no terminó de detenerse")
+            return False
         time.sleep(0.05)
-    escena.tras_detener()
+    return True
+
+
+def rearmar_carro(sim, escena):
+    """Después de guardar los CSV: vuelve a armar el carro que CoppeliaSim borró al detener la
+    simulación (ver EscenaCoppelia.tras_detener). Un fallo aquí no afecta los resultados."""
+    try:
+        if sim.getSimulationState() == sim.simulation_stopped:
+            escena.tras_detener()
+    except Exception as e:
+        print(f"AVISO: no se pudo volver a armar el carro para guardar la escena ({e})")
 
 
 def conectar_coppelia():
@@ -358,7 +373,7 @@ def main():
                                                  args.ruido_mm, rng, lado))
     finally:
         if sim is not None:
-            detener_coppelia(sim, escena)
+            detener_coppelia(sim)
 
     # ---- guardar
     cab_pasos = (["ciclo", "t_s", "estado"] + [f"q{i}_grados" for i in range(1, 7)]
@@ -386,6 +401,8 @@ def main():
         print(f"Ciclos en los que el robot decidió no repostar: {rechazados}")
     print(f"Error máximo modelo DH vs. simulador en toda la corrida: {ctl.err_max_modelo_sim:.4f} mm")
     print("CSV en la carpeta resultados/")
+    if sim is not None:
+        rearmar_carro(sim, escena)
     return escena, resultados, ctl
 
 

@@ -300,8 +300,10 @@ class EscenaCoppelia:
             return
         try:
             existe = self.sim.isHandle(self.carro)
-        except Exception:
-            existe = False
+        except Exception as e:
+            # sin saber si el carro sigue, no se arma otro para no duplicar el Vehiculo
+            self.log(f"AVISO: no se pudo comprobar el carro tras detener ({e}); no se vuelve a armar")
+            return
         if not existe:
             self.carro = None
             self.preparar_vehiculo(self.tipo, self.lado)

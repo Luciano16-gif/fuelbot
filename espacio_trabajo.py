@@ -13,8 +13,10 @@ Pregunta 2: ¿qué tan cerca de una singularidad queda el brazo?
     Se usa el índice de manipulabilidad de Yoshikawa, w = sqrt(det(J J^T)) = |det J|, con el
     jacobiano de modelo_dh.py. Para la geometría del UR5 el determinante se factoriza en
         det J = a2 a3 · sin q3 · sin q5 · (a2 cos q2 + a3 cos(q2+q3) + d5 sin(q2+q3+q4))
-    y cada factor se anula en una singularidad distinta: codo (q3 = 0, brazo estirado),
-    muñeca (q5 = 0, ejes 4 y 6 alineados) y hombro (el centro de la muñeca sobre el eje 1).
+    y cada factor se anula en una singularidad distinta: codo (sin q3 = 0, brazo estirado o
+    plegado), muñeca (sin q5 = 0, ejes 4 y 6 alineados) y hombro (la magnitud del último factor es
+    la distancia del punto donde se cruzan los ejes 5 y 6 al plano de los ejes 1 y 2; se anula
+    cuando ese punto queda en el plano).
     Se reporta w normalizado con su máximo para el UR5 (w_max = 0,1199, en q3 = 72,3°).
 
 Uso:
@@ -47,14 +49,17 @@ W_MAX = _w_max()
 
 
 def factores_singularidad(q):
-    """(|sin q3|, |sin q5|, |factor del hombro| [m]). El menor indica la singularidad más cercana."""
+    """(|sin q3|, |sin q5|, |factor del hombro| [m]). Los dos primeros son adimensionales y el
+    tercero es una distancia, así que no se comparan entre sí directamente: se compara cómo cambia
+    cada uno de una postura a otra."""
     _, q2, q3, q4, q5, _ = q
     hombro = A2 * np.cos(q2) + A3 * np.cos(q2 + q3) + D5 * np.sin(q2 + q3 + q4)
     return abs(np.sin(q3)), abs(np.sin(q5)), abs(hombro)
 
 
 def evaluar_boca(p_boca, lado):
-    """Evalúa la maniobra completa para una boca en p_boca (mundo) en el carril 'lado'.
+    """Evalúa el vía point y el tramo de inserción muestreado (11 poses) para una boca en
+    p_boca (mundo) en el carril 'lado'.
     Devuelve None si no es alcanzable, o un dict con la manipulabilidad y los factores."""
     eje = esc.eje_boca(lado)
     p_aprox = esc.a_base(p_boca - esc.DIST_APROXIMACION * eje)
@@ -155,7 +160,8 @@ def figura(cortes, ruta):
     fig, axs = plt.subplots(1, 2, figsize=(11, 4.6), dpi=130, constrained_layout=True)
     for ax, (titulo, ejex, xs, zs, W, marcas) in zip(axs, cortes):
         im = ax.pcolormesh(xs, zs, np.ma.masked_invalid(W), cmap=cmap, vmin=0, vmax=1, shading="nearest")
-        ax.contour(xs, zs, np.nan_to_num(W, nan=0.0), levels=[0.25], colors="#444", linewidths=1,
+        # el contorno se traza solo sobre celdas alcanzables, para no inventar cruces en el borde
+        ax.contour(xs, zs, np.ma.masked_invalid(W), levels=[0.25], colors="#444", linewidths=1,
                    linestyles="--")
         for etiqueta, x0, x1, z, dx_etq in marcas:
             ax.add_patch(plt.Rectangle((x0, z - 0.004), x1 - x0, 0.008, color="#c0392b", zorder=5))

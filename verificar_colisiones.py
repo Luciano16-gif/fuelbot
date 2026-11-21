@@ -3,7 +3,7 @@ verificar_colisiones.py: Mide en CoppeliaSim la holgura del brazo con el carro y
 durante el ciclo de repostaje.
 
 Corre los mismos ciclos que ciclo_repostaje.py (misma semilla, mismos tipos y posiciones del carro)
-y, en cada paso, mide con sim.checkDistance la distancia mínima entre tres pares de grupos:
+y, en cada paso, mide con sim.checkDistance la distancia mínima entre cuatro pares de grupos:
 
     brazo_carro         todo el brazo menos la boquilla  vs. el carro (carrocería, cabina, ruedas, boca, tapa)
     boquilla_carro      el tubo de la boquilla           vs. el carro completo
@@ -31,8 +31,8 @@ import numpy as np
 
 import modelo_dh as m
 import escenario as esc
-from ciclo_repostaje import (Controlador, conectar_coppelia, detener_coppelia, sortear_ciclos,
-                             argumentos_comunes)
+from ciclo_repostaje import (Controlador, conectar_coppelia, detener_coppelia, rearmar_carro,
+                             sortear_ciclos, argumentos_comunes)
 
 PARES = ("brazo_carro", "boquilla_carro", "boquilla_exterior", "robot_estacion")
 ESTADOS_BOQUILLA_DENTRO = ("INSERCION", "SURTIDO", "EXTRACCION")
@@ -163,7 +163,7 @@ def main():
         for tipo, dx, dy, lado in ciclos:
             ctl.ciclo_completo(tipo, dx, dy, args.litros, args.caudal, args.ruido_mm, rng, lado)
     finally:
-        detener_coppelia(sim, escena)
+        detener_coppelia(sim)
 
     # ---- guardar
     filas = []
@@ -204,8 +204,10 @@ def main():
         for c in choques:
             print(f"  ciclo {c[0]}, {c[1]}, {c[2]}: {c[3]} con {c[4]}")
     else:
-        print("\nSin contactos fuera de la inserción en ningún ciclo.")
+        print("\nSin contactos en ningún ciclo (fuera de la carrocería y la boca, que la boquilla "
+              "atraviesa por diseño en la inserción).")
     print("Detalle por ciclo en resultados/colisiones.csv")
+    rearmar_carro(sim, escena)
 
 
 if __name__ == "__main__":
