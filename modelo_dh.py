@@ -14,6 +14,7 @@ Contenido:
     fk_frames()     todas las matrices 0T1 ... 0T6 y la de la boquilla
     fk()            cinemática directa: pose de la punta de la boquilla
     jacobiano()     jacobiano geométrico 6x6
+    manipulabilidad() índice de Yoshikawa a partir del jacobiano
     ik()            cinemática inversa numérica (mínimos cuadrados amortiguados)
 """
 import numpy as np
@@ -84,6 +85,13 @@ def jacobiano(q):
         J[:3, i] = np.cross(z, p - o)
         J[3:, i] = z
     return J
+
+
+def manipulabilidad(q):
+    """Índice de manipulabilidad de Yoshikawa: w = sqrt(det(J J^T)).
+    Con J cuadrada (6x6) es |det J|, que se calcula directo porque det(J J^T) pierde
+    precisión cerca de una singularidad. Vale 0 en una singularidad y crece al alejarse de ella."""
+    return float(abs(np.linalg.det(jacobiano(q))))
 
 
 def error_pose(T_actual, p_obj, eje_obj):

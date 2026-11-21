@@ -2,16 +2,20 @@
 ciclo_repostaje.py: Programa principal.
 
 Uso (con CoppeliaSim abierto, en una escena nueva y vacía):
-    python ciclo_repostaje.py                 # 3 ciclos, 5 litros cada uno
-    python ciclo_repostaje.py --ciclos 10     # corrida de verificación (objetivo general)
+    python ciclo_repostaje.py                 # 4 ciclos, uno por tipo de vehículo, 5 litros cada uno
+    python ciclo_repostaje.py --ciclos 20     # corrida de verificación (objetivo general)
+    python ciclo_repostaje.py --tipo suv      # solo un tipo de vehículo
     python ciclo_repostaje.py --sin-coppelia  # corre todo sin simulador (prueba rápida del código)
 
 Máquina de estados de cada ciclo:
-    LLEGADA -> DETECCION -> APROXIMACION (PTP quíntico) -> INSERCION (lineal)
+    LLEGADA -> DETECCION (placa, carril, boca y decisión de aproximación)
+            -> APROXIMACION (PTP quíntico) -> INSERCION (lineal)
             -> SURTIDO (caudal x tiempo) -> EXTRACCION (lineal) -> REPOSO (PTP quíntico) -> SALIDA
+Si en DETECCION el robot decide no repostar (carro en el carril equivocado o boca fuera de
+alcance), salta directo a SALIDA sin mover el brazo.
 
 Salidas:
-    resultados/ciclos.csv  una fila por ciclo: errores de sensores, de inserción y de volumen
+    resultados/ciclos.csv  una fila por ciclo: tipo, decisión, errores de sensores, de inserción y de volumen
     resultados/pasos.csv   una fila por paso de simulación: q, punta según modelo y según simulador
 """
 import argparse
@@ -24,21 +28,31 @@ import modelo_dh as m
 import escenario as esc
 from trayectorias import ptp_articular, lineal_cartesiana
 
+NOMBRE_LADO = {-1: "izquierdo (-y)", +1: "derecho (+y)"}
+
 
 # ----------------------------------------------------------------------------
-# prueba para correr el ciclo sin CoppeliaSim 
+# prueba para correr el ciclo sin CoppeliaSim
 # ----------------------------------------------------------------------------
 class EscenaSinSimulador:
     def __init__(self):
         self.q = np.array(esc.Q_REPOSO)
         self.carro = np.zeros(2)
-        self.cuadros = []          
+        self.tipo = None
+        self.lado = None
+        self.cuadros = []
 
     def construir(self):
         pass
 
+    def preparar_vehiculo(self, tipo, lado):
+        self.tipo, self.lado = tipo, lado
+
     def colocar_vehiculo(self, x, dy):
         self.carro = np.array([x, dy])
+
+    def leer_placa(self):
+        return self.tipo
 
     def poner_q(self, q):
         self.q = np.array(q)
@@ -51,7 +65,11 @@ class EscenaSinSimulador:
 
     def medir_sensores(self, ruido_mm=0.0, rng=None, respaldo=None):
         rng = rng or np.random.default_rng()
-        return [v + rng.normal(0, ruido_mm / 1000) for v in respaldo]
+        self.emuladas = len(respaldo)          # sin simulador todas las lecturas son emuladas
+        return {k: v + rng.normal(0, ruido_mm / 1000) for k, v in respaldo.items()}
+
+    def tras_detener(self):
+        pass
 
     def marcar_surtido(self, activo):
         pass
@@ -61,11 +79,18 @@ class EscenaSinSimulador:
 
 
 # ----------------------------------------------------------------------------
+CLAVES_CICLO = ["ciclo", "tipo", "carril", "altura_boca_m", "dx_mm", "dy_mm", "decision",
+                "sensores_emulados", "err_sensor_lat_mm", "err_sensor_tras_mm", "err_estim_boca_mm",
+                "manip_insercion", "manip_min_lineal", "desv_recta_max_mm",
+                "err_insercion_mm", "err_orientacion_grados", "litros_pedidos", "litros_despachados",
+                "err_volumen_pct", "err_reposo_grados", "cumple"]
+
+
 class Controlador:
     def __init__(self, escena, paso_sim, dt, tiempo_real=False):
         self.e = escena
         # función que avanza un paso del simulador
-        self.paso_sim = paso_sim       
+        self.paso_sim = paso_sim
         self.dt = dt
         self.tiempo_real = tiempo_real
         self.t = 0.0
@@ -91,7 +116,7 @@ class Controlador:
         self.filas.append([self.ciclo, round(self.t, 3), self.estado,
                            *np.round(np.degrees(q_act), 4),
                            *np.round(p_modelo, 6), *np.round(p_sim, 6),
-                           round(err, 4), round(self.litros, 3)])
+                           round(err, 4), round(m.manipulabilidad(q_act), 5), round(self.litros, 3)])
 
     def _ejecutar(self, lista_q):
         for q in lista_q:
@@ -101,62 +126,123 @@ class Controlador:
         for _ in range(int(round(segundos / self.dt))):
             self._paso()
 
-    def ciclo_completo(self, dx, dy, litros_obj, caudal, ruido_mm, rng):
+    def decidir_aproximacion(self, lecturas, tipo):
+        """Decide si se puede repostar y cómo. Devuelve (plan, motivo_rechazo).
+        1. El carril ocupado sale de los sensores laterales.
+        2. La boca tiene que quedar hacia la isla: el carril tiene que coincidir con el lado de la
+           boca que dice la base de datos para ese tipo.
+        3. La semilla de la IK se elige según el carril (q1 girado hacia ese lado).
+        4. El vía point y todas las muestras de los tramos lineales de inserción y extracción
+           tienen que ser alcanzables con la boquilla alineada con el eje del cuello. Los tramos
+           se calculan aquí, antes de mover el brazo, y el ciclo ejecuta exactamente esos."""
+        lado = esc.detectar_carril(lecturas)
+        if lado is None:
+            return None, "no se detectó un carro en un solo carril"
+        if lado != esc.lado_de(tipo):
+            return None, (f"boca {esc.TIPOS_VEHICULO[tipo]['boca']} con el carro en el carril "
+                          f"{NOMBRE_LADO[lado]}: la boca queda del lado contrario a la isla")
+        p_boca = esc.estimar_boca(lecturas, tipo, lado)
+        eje = esc.eje_boca(lado)
+        p_aprox = esc.a_base(p_boca - esc.DIST_APROXIMACION * eje)
+        p_inser = esc.a_base(p_boca + esc.PROFUNDIDAD_INSERCION * eje)
+        q_aprox, ok, it = m.ik(p_aprox, eje, esc.q_semilla(lado))
+        if not ok:
+            return None, "boca fuera del espacio de trabajo con la orientación requerida"
+        try:
+            qs_inser, _ = lineal_cartesiana(q_aprox, p_inser, eje, 2.0, self.dt)
+            qs_extr, _ = lineal_cartesiana(qs_inser[-1], p_aprox, eje, 2.0, self.dt)
+        except RuntimeError:
+            return None, "boca fuera del espacio de trabajo con la orientación requerida"
+        plan = dict(lado=lado, p_boca=p_boca, eje=eje, p_aprox=p_aprox, p_inser=p_inser,
+                    q_aprox=q_aprox, iteraciones=it, qs_inser=qs_inser, qs_extr=qs_extr,
+                    manip_insercion=m.manipulabilidad(qs_inser[-1]))
+        return plan, ""
+
+    def ciclo_completo(self, tipo, dx, dy, litros_obj, caudal, ruido_mm, rng, lado=None):
+        """lado: carril donde se estaciona el carro. Por defecto, el que deja la boca hacia la isla."""
         e = self.e
         self.ciclo += 1
         self.litros = 0.0
-        res = {"ciclo": self.ciclo, "dx_mm": round(dx * 1000, 1), "dy_mm": round(dy * 1000, 1)}
+        lado = esc.lado_de(tipo) if lado is None else lado
+        res = dict.fromkeys(CLAVES_CICLO, "")
+        res.update(ciclo=self.ciclo, tipo=tipo, carril=lado,
+                   altura_boca_m=esc.TIPOS_VEHICULO[tipo]["altura_boca"],
+                   dx_mm=round(dx * 1000, 1), dy_mm=round(dy * 1000, 1), cumple=False)
+        e.preparar_vehiculo(tipo, lado)
 
         # el carro entra desde adelante y se detiene
         self.estado = "LLEGADA"
-        e.log(f"--- Ciclo {self.ciclo}: vehículo llegando (dx={dx*1000:+.0f} mm, dy={dy*1000:+.0f} mm)")
+        e.log(f"--- Ciclo {self.ciclo}: {tipo} llegando al carril {NOMBRE_LADO[lado]} "
+              f"(dx={dx*1000:+.0f} mm, dy={dy*1000:+.0f} mm)")
         n = int(round(2.0 / self.dt))
         for k in range(n + 1):
-            s = 1 - (1 - k / n) ** 2                      
+            s = 1 - (1 - k / n) ** 2
             e.colocar_vehiculo(dx + 6.0 * (1 - s), dy)
             self._paso()
 
-        # sensores para la posición estimada de la boca de llenado
+        # placa -> modelo; sensores -> carril y posición estimada de la boca; decisión
         self.estado = "DETECCION"
-        ideal = esc.lecturas_ideales(dx, dy)
-        d_lat, d_tras = e.medir_sensores(ruido_mm, rng, respaldo=ideal)
-        p_boca_est = esc.estimar_boca(d_lat, d_tras)
-        p_boca_real = esc.posicion_boca(dx, dy)
-        res["err_sensor_lat_mm"] = round((d_lat - ideal[0]) * 1000, 2)
-        res["err_sensor_tras_mm"] = round((d_tras - ideal[1]) * 1000, 2)
-        res["err_estim_boca_mm"] = round(float(np.linalg.norm(p_boca_est - p_boca_real)) * 1000, 2)
-        e.log(f"Sensores: lateral {d_lat*1000:.1f} mm, trasero {d_tras*1000:.1f} mm "
-              f"-> boca estimada con error {res['err_estim_boca_mm']:.2f} mm")
+        tipo_leido = e.leer_placa()
+        ideal = esc.lecturas_ideales(dx, dy, tipo, lado)
+        lecturas = e.medir_sensores(ruido_mm, rng, respaldo=ideal)
+        res["sensores_emulados"] = getattr(e, "emuladas", 0)
+        plan, motivo = self.decidir_aproximacion(lecturas, tipo_leido)
         self._esperar(0.5)
 
-        # objetivos en el marco de la BASE del robot
-        eje = esc.EJE_BOCA
-        p_aprox = esc.a_base(p_boca_est - esc.DIST_APROXIMACION * eje)
-        p_inser = esc.a_base(p_boca_est + esc.PROFUNDIDAD_INSERCION * eje)
+        if plan is None:
+            res["decision"] = "rechazar: " + motivo
+            e.log(f"Decisión: NO repostar ({motivo})")
+        else:
+            res["decision"] = "repostar"
+            p_boca_real = esc.posicion_boca(dx, dy, tipo, lado)
+            res["err_sensor_lat_mm"] = round((lecturas[("lat", lado)] - ideal[("lat", lado)]) * 1000, 2)
+            res["err_sensor_tras_mm"] = round((lecturas[("tras", lado)] - ideal[("tras", lado)]) * 1000, 2)
+            res["err_estim_boca_mm"] = round(float(np.linalg.norm(plan["p_boca"] - p_boca_real)) * 1000, 2)
+            res["manip_insercion"] = round(plan["manip_insercion"], 4)
+            e.log(f"Placa: {tipo_leido}. Carril {NOMBRE_LADO[lado]}, boca a {plan['p_boca'][2]:.2f} m, "
+                  f"estimada con error {res['err_estim_boca_mm']:.2f} mm")
+            e.log(f"Decisión: repostar; semilla q1 = {np.degrees(esc.q_semilla(lado)[0]):+.0f}°, "
+                  f"manipulabilidad en la inserción {plan['manip_insercion']:.4f}")
+            self._repostar(plan, p_boca_real, litros_obj, caudal, res)
+
+        # el carro se va
+        self.estado = "SALIDA"
+        n = int(round(1.5 / self.dt))
+        for k in range(n + 1):
+            e.colocar_vehiculo(dx + 7.0 * (k / n) ** 2, dy)
+            self._paso()
+
+        if plan is not None:
+            res["cumple"] = res["err_insercion_mm"] < 5 and res["err_orientacion_grados"] < 2
+        e.log(f"Ciclo {self.ciclo} {'CUMPLE' if res['cumple'] else 'NO CUMPLE'} el objetivo general")
+        return res
+
+    def _ejecutar_recta(self, qs, p_aprox, u):
+        """Ejecuta un tramo lineal y devuelve la desviación de la punta (según el simulador)
+        respecto a la recta ideal que pasa por el vía point con dirección u, en cada muestra."""
+        desv = []
+        for q in qs:
+            self._paso(q)
+            d0 = esc.a_base(self.e.pose_punta()[:3, 3]) - p_aprox
+            desv.append(np.linalg.norm(d0 - np.dot(d0, u) * u))
+        return desv
+
+    def _repostar(self, plan, p_boca_real, litros_obj, caudal, res):
+        e = self.e
+        eje, p_aprox, p_inser = plan["eje"], plan["p_aprox"], plan["p_inser"]
 
         # PTP articular con perfil quíntico hasta el vía point
         self.estado = "APROXIMACION"
-        q_aprox, ok, it = m.ik(p_aprox, eje, e.leer_q())
-        if not ok:
-            raise RuntimeError("IK sin solución para el punto de aproximación")
-        e.log(f"Aproximación PTP (IK en {it} iteraciones)")
-        self._ejecutar(ptp_articular(e.leer_q(), q_aprox, 3.0, self.dt))
+        e.log(f"Aproximación PTP (IK en {plan['iteraciones']} iteraciones)")
+        self._ejecutar(ptp_articular(e.leer_q(), plan["q_aprox"], 3.0, self.dt))
 
-        # línea recta sobre el eje de la boca
+        # línea recta sobre el eje de la boca (tramo calculado en la decisión)
         self.estado = "INSERCION"
         e.log("Inserción lineal")
-        qs, ps = lineal_cartesiana(e.leer_q(), p_inser, eje, 2.0, self.dt)
-        desv = []
-        for q, p_des in zip(qs, ps):
-            self._paso(q)
-            p_real = esc.a_base(e.pose_punta()[:3, 3])
-            # desviación respecto a la recta ideal 
-            d0 = p_real - p_aprox
-            u = (p_inser - p_aprox) / np.linalg.norm(p_inser - p_aprox)
-            desv.append(np.linalg.norm(d0 - np.dot(d0, u) * u))
-        res["desv_recta_max_mm"] = round(float(max(desv)) * 1000, 3)
+        u = (p_inser - p_aprox) / np.linalg.norm(p_inser - p_aprox)
+        desv = self._ejecutar_recta(plan["qs_inser"], p_aprox, u)
 
-        # error de inserción contra la boca 
+        # error de inserción contra la boca
         T_sim = e.pose_punta()
         p_obj_real = p_boca_real + esc.PROFUNDIDAD_INSERCION * eje
         res["err_insercion_mm"] = round(float(np.linalg.norm(T_sim[:3, 3] - p_obj_real)) * 1000, 2)
@@ -178,24 +264,69 @@ class Controlador:
 
         # misma recta, de vuelta al vía point para la extraccion
         self.estado = "EXTRACCION"
-        qs, _ = lineal_cartesiana(e.leer_q(), p_aprox, eje, 2.0, self.dt)
-        self._ejecutar(qs)
+        desv += self._ejecutar_recta(plan["qs_extr"], p_aprox, u)
+        res["desv_recta_max_mm"] = round(float(max(desv)) * 1000, 3)
+        res["manip_min_lineal"] = round(min(m.manipulabilidad(q) for q in plan["qs_inser"] + plan["qs_extr"]), 4)
 
         # PTP de vuelta a la configuración de reposo
         self.estado = "REPOSO"
         self._ejecutar(ptp_articular(e.leer_q(), esc.Q_REPOSO, 3.0, self.dt))
         res["err_reposo_grados"] = round(float(np.max(np.abs(np.degrees(e.leer_q() - esc.Q_REPOSO)))), 4)
 
-        # el carro se va
-        self.estado = "SALIDA"
-        n = int(round(1.5 / self.dt))
-        for k in range(n + 1):
-            e.colocar_vehiculo(dx + 7.0 * (k / n) ** 2, dy)
-            self._paso()
 
-        res["cumple"] = res["err_insercion_mm"] < 5 and res["err_orientacion_grados"] < 2
-        e.log(f"Ciclo {self.ciclo} {'CUMPLE' if res['cumple'] else 'NO CUMPLE'} el objetivo general")
-        return res
+def sortear_ciclos(args, rng):
+    """Tipo, posición y carril de cada ciclo. Los tipos se turnan (compacto, sedán, SUV, pickup)
+    para que la corrida los cubra a todos; dx y dy son aleatorios. verificar_colisiones.py usa
+    esta misma función para repetir exactamente los mismos ciclos."""
+    ciclos = []
+    for k in range(args.ciclos):
+        tipo = args.tipo or esc.TIPOS[k % len(esc.TIPOS)]
+        dx = rng.uniform(-esc.RANGO_DX, esc.RANGO_DX)
+        dy = rng.uniform(-esc.RANGO_DY, esc.RANGO_DY)
+        lado = -esc.lado_de(tipo) if k + 1 == args.carril_equivocado else None
+        ciclos.append((tipo, dx, dy, lado))
+    return ciclos
+
+
+def argumentos_comunes(ap):
+    ap.add_argument("--ciclos", type=int, default=4)
+    ap.add_argument("--tipo", choices=esc.TIPOS, help="usar siempre este tipo de vehículo")
+    ap.add_argument("--carril-equivocado", type=int, default=0, metavar="N",
+                    help="en el ciclo N el carro se estaciona con la boca del lado contrario a la isla")
+    ap.add_argument("--litros", type=float, default=5.0)
+    ap.add_argument("--caudal", type=float, default=esc.CAUDAL_L_S, help="L/s")
+    ap.add_argument("--dt", type=float, default=0.05, help="paso de control [s]")
+    ap.add_argument("--ruido-mm", type=float, default=1.0, help="ruido del sensor (desv. estándar)")
+    ap.add_argument("--semilla", type=int, default=7)
+
+
+def detener_coppelia(sim, espera_max_s=10.0):
+    """Detiene la simulación y espera a que pare. Devuelve True si paró.
+    Nunca lanza excepciones: se llama antes de guardar los CSV y un fallo aquí no debe hacer
+    perder los resultados de una corrida terminada. espera_max_s acota el sondeo del estado;
+    no puede acotar una llamada remota que se quede colgada."""
+    try:
+        sim.stopSimulation()
+        limite = time.time() + espera_max_s
+        while sim.getSimulationState() != sim.simulation_stopped:
+            if time.time() > limite:
+                print("AVISO: la simulación no terminó de detenerse")
+                return False
+            time.sleep(0.05)
+        return True
+    except Exception as e:
+        print(f"AVISO: no se pudo detener la simulación ({e}); se guardan los resultados igual")
+        return False
+
+
+def rearmar_carro(sim, escena):
+    """Después de guardar los CSV: vuelve a armar el carro que CoppeliaSim borró al detener la
+    simulación (ver EscenaCoppelia.tras_detener). Un fallo aquí no afecta los resultados."""
+    try:
+        if sim.getSimulationState() == sim.simulation_stopped:
+            escena.tras_detener()
+    except Exception as e:
+        print(f"AVISO: no se pudo volver a armar el carro para guardar la escena ({e})")
 
 
 def conectar_coppelia():
@@ -225,21 +356,17 @@ def guardar_csv(ruta, encabezado, filas):
 
 def main():
     ap = argparse.ArgumentParser(description="Ciclo de repostaje automático (FPTEN27)")
-    ap.add_argument("--ciclos", type=int, default=3)
-    ap.add_argument("--litros", type=float, default=5.0)
-    ap.add_argument("--caudal", type=float, default=esc.CAUDAL_L_S, help="L/s")
-    ap.add_argument("--dt", type=float, default=0.05, help="paso de control [s]")
-    ap.add_argument("--ruido-mm", type=float, default=1.0, help="ruido del sensor (desv. estándar)")
-    ap.add_argument("--semilla", type=int, default=7)
+    argumentos_comunes(ap)
     ap.add_argument("--tiempo-real", action="store_true", help="ritmo de reloj real (para grabar video)")
     ap.add_argument("--sin-coppelia", action="store_true")
     args = ap.parse_args()
 
     rng = np.random.default_rng(args.semilla)
+    ciclos = sortear_ciclos(args, rng)
     sim = None
     if args.sin_coppelia:
         escena = EscenaSinSimulador()
-        paso = lambda: escena.cuadros.append((escena.q.copy(), escena.carro.copy()))
+        paso = lambda: escena.cuadros.append((escena.q.copy(), escena.carro.copy(), escena.tipo, escena.lado))
     else:
         sim, escena = conectar_coppelia()
         paso = sim.step
@@ -247,31 +374,41 @@ def main():
     ctl = Controlador(escena, paso, args.dt, args.tiempo_real)
     resultados = []
     try:
-        for _ in range(args.ciclos):
-            dx = rng.uniform(-esc.RANGO_DX, esc.RANGO_DX)
-            dy = rng.uniform(-esc.RANGO_DY, esc.RANGO_DY)
-            resultados.append(ctl.ciclo_completo(dx, dy, args.litros, args.caudal, args.ruido_mm, rng))
+        for tipo, dx, dy, lado in ciclos:
+            resultados.append(ctl.ciclo_completo(tipo, dx, dy, args.litros, args.caudal,
+                                                 args.ruido_mm, rng, lado))
     finally:
         if sim is not None:
-            sim.stopSimulation()
+            detener_coppelia(sim)
 
-    # ---- guardar 
+    # ---- guardar
     cab_pasos = (["ciclo", "t_s", "estado"] + [f"q{i}_grados" for i in range(1, 7)]
                  + ["x_modelo", "y_modelo", "z_modelo", "x_sim", "y_sim", "z_sim",
-                    "err_modelo_vs_sim_mm", "litros"])
+                    "err_modelo_vs_sim_mm", "manipulabilidad", "litros"])
     guardar_csv("resultados/pasos.csv", cab_pasos, ctl.filas)
-    claves = list(resultados[0].keys())
-    guardar_csv("resultados/ciclos.csv", claves, [[r[k] for k in claves] for r in resultados])
+    guardar_csv("resultados/ciclos.csv", CLAVES_CICLO, [[r[k] for k in CLAVES_CICLO] for r in resultados])
 
     print("\n================ RESUMEN ================")
-    print(f"{'ciclo':>5} {'err_ins[mm]':>11} {'err_ori[°]':>10} {'desv_recta[mm]':>14} {'err_vol[%]':>10}  cumple")
+    print(f"{'ciclo':>5} {'tipo':<9} {'carril':>6} {'err_ins[mm]':>11} {'err_ori[°]':>10} "
+          f"{'desv_recta[mm]':>14} {'manip_ins':>9} {'err_vol[%]':>10}  cumple")
     for r in resultados:
-        print(f"{r['ciclo']:>5} {r['err_insercion_mm']:>11.2f} {r['err_orientacion_grados']:>10.3f} "
-              f"{r['desv_recta_max_mm']:>14.3f} {r['err_volumen_pct']:>10.3f}  {'sí' if r['cumple'] else 'NO'}")
+        if r["decision"] != "repostar":
+            print(f"{r['ciclo']:>5} {r['tipo']:<9} {r['carril']:>+6d}  {r['decision']}")
+            continue
+        print(f"{r['ciclo']:>5} {r['tipo']:<9} {r['carril']:>+6d} {r['err_insercion_mm']:>11.2f} "
+              f"{r['err_orientacion_grados']:>10.3f} {r['desv_recta_max_mm']:>14.3f} "
+              f"{r['manip_insercion']:>9.4f} {r['err_volumen_pct']:>10.3f}  {'sí' if r['cumple'] else 'NO'}")
     n_ok = sum(r["cumple"] for r in resultados)
+    rechazados = sum(r["decision"] != "repostar" for r in resultados)
     print(f"Ciclos que cumplen: {n_ok}/{len(resultados)}")
+    if not args.sin_coppelia and any(r["sensores_emulados"] for r in resultados):
+        print("AVISO: hubo lecturas de sensores emuladas (columna sensores_emulados de ciclos.csv)")
+    if rechazados:
+        print(f"Ciclos en los que el robot decidió no repostar: {rechazados}")
     print(f"Error máximo modelo DH vs. simulador en toda la corrida: {ctl.err_max_modelo_sim:.4f} mm")
     print("CSV en la carpeta resultados/")
+    if sim is not None:
+        rearmar_carro(sim, escena)
     return escena, resultados, ctl
 
 

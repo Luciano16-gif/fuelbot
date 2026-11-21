@@ -13,10 +13,11 @@ Guía para agentes de código (Claude, Codex, etc.) que trabajen en este repo. E
 
 - `modelo_dh.py`: tabla DH, cinemática directa, jacobiano e IK por mínimos cuadrados amortiguados (DLS). Es el núcleo; cualquier cambio aquí se verifica con `verificar_modelo.py`.
 - `trayectorias.py`: perfil quíntico, PTP articular y lineal cartesiano.
-- `escenario.py`: medidas de la estación, el carro y los sensores (constantes).
+- `escenario.py`: medidas de la estación y de los sensores, y base de datos de los cuatro tipos de vehículo (`TIPOS_VEHICULO`). El robot está en el centro de la isla y hay un carril a cada lado (`lado = -1` o `+1`).
 - `escena_coppelia.py`: todo lo que habla con CoppeliaSim.
-- `ciclo_repostaje.py`: programa principal y máquina de estados `LLEGADA -> DETECCION -> APROXIMACION -> INSERCION -> SURTIDO -> EXTRACCION -> REPOSO -> SALIDA`. Incluye `EscenaSinSimulador`, que imita la interfaz de la escena real para correr sin CoppeliaSim.
+- `ciclo_repostaje.py`: programa principal y máquina de estados `LLEGADA -> DETECCION -> APROXIMACION -> INSERCION -> SURTIDO -> EXTRACCION -> REPOSO -> SALIDA`. En DETECCION, `Controlador.decidir_aproximacion` elige el carril y la semilla de la IK, o decide no repostar (salta a SALIDA). `sortear_ciclos` reparte los tipos y las posiciones; `verificar_colisiones.py` la reutiliza para repetir los mismos ciclos. Incluye `EscenaSinSimulador`, que imita la interfaz de la escena real para correr sin CoppeliaSim.
 - `vista_previa.py`: animación en matplotlib, sin simulador.
+- `espacio_trabajo.py`: alcanzabilidad de la boca con la orientación requerida y manipulabilidad en una malla de posiciones. No necesita CoppeliaSim; tarda unos 3 minutos y escribe `resultados/espacio_trabajo.csv`, `espacio_tipos.csv` y `espacio_trabajo.png`.
 - `verificar_colisiones.py`: holgura mínima del brazo con el carro y la estación (`sim.checkDistance`) en cada estado del ciclo. Solo corre con CoppeliaSim abierto y escribe `resultados/colisiones.csv`.
 - `resultados/`: CSV que genera `ciclo_repostaje.py`.
 
@@ -30,7 +31,7 @@ python verificar_modelo.py
 python ciclo_repostaje.py --sin-coppelia --ciclos 10
 ```
 
-Resultado esperado: IK 200/200 convergen, diferencia del jacobiano del orden de 1e-9 y "Ciclos que cumplen: 10/10". Si un cambio toca `escena_coppelia.py`, dilo en el resumen: solo se puede probar de verdad con CoppeliaSim abierto, y eso lo hace una persona del equipo.
+Resultado esperado: IK 200/200 convergen, diferencia del jacobiano del orden de 1e-9 y "Ciclos que cumplen: 10/10". `espacio_trabajo.py` no depende del simulador, así que sus salidas sí se pueden regenerar y subir. Si un cambio toca `escena_coppelia.py`, dilo en el resumen: solo se puede probar de verdad con CoppeliaSim abierto, y eso lo hace una persona del equipo.
 
 `ciclo_repostaje.py` sobrescribe `resultados/ciclos.csv` y `resultados/pasos.csv`. No hagas commit de esos CSV cuando vengan de una corrida `--sin-coppelia`; restáuralos con `git checkout -- resultados` después de probar. Solo se actualizan cuando el equipo hace una corrida real en el simulador.
 
