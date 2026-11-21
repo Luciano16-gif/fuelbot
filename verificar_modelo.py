@@ -4,7 +4,7 @@ verificar_modelo.py: Pruebas del modelo sin necesidad de CoppeliaSim.
 1. Cinemática directa: nuestro modelo DH vs. Robotics Toolbox for Python, construida con
    la misma tabla DH, en 20 configuraciones aleatorias.  (pip install roboticstoolbox-python)
 2. Jacobiano: el analítico (geométrico) vs. uno numérico por diferencias finitas.
-3. Cinemática inversa: 200 objetivos aleatorios alrededor de la boca de llenado.
+3. Cinemática inversa: 200 objetivos aleatorios alrededor de la boca de llenado (50 por tipo de vehículo).
 """
 import numpy as np
 import modelo_dh as m
@@ -41,12 +41,15 @@ print(f"2) Jacobiano (parte lineal) analítico vs numérico: diferencia máx = {
 
 # IK en el entorno de trabajo ----------------------------------------------------
 fallos, its, err = 0, [], []
-for _ in range(200):
+for k in range(200):
+    tipo = esc.TIPOS[k % len(esc.TIPOS)]
+    lado = esc.lado_de(tipo)
+    eje = esc.eje_boca(lado)
     dx, dy = rng.uniform(-esc.RANGO_DX, esc.RANGO_DX), rng.uniform(-esc.RANGO_DY, esc.RANGO_DY)
-    p = esc.a_base(esc.posicion_boca(dx, dy) - esc.DIST_APROXIMACION * esc.EJE_BOCA)
-    q, ok, it = m.ik(p, esc.EJE_BOCA, esc.Q_REPOSO)
+    p = esc.a_base(esc.posicion_boca(dx, dy, tipo) - esc.DIST_APROXIMACION * eje)
+    q, ok, it = m.ik(p, eje, esc.q_semilla(lado))
     fallos += not ok
     its.append(it)
     err.append(np.linalg.norm(m.fk(q)[:3, 3] - p) * 1000)
-print(f"3) IK en 200 posiciones del carro: {200 - fallos}/200 convergen, "
+print(f"3) IK en 200 posiciones del carro (4 tipos, 2 carriles): {200 - fallos}/200 convergen, "
       f"iteraciones medias {np.mean(its):.1f}, error máx {max(err):.4f} mm")

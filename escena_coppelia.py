@@ -53,6 +53,8 @@ class EscenaCoppelia:
         self.sim = sim
         self.juntas = []
         self.carro = None
+        self.tipo = None
+        self.lado = None
         self.manguera = None
 
     # ---------------------------------------------------------------- utilidades
@@ -116,7 +118,6 @@ class EscenaCoppelia:
         self.raiz = self._dummy(np.eye(4), "FuelBot", None, 0.05)
         self._construir_isla()
         self._construir_robot()
-        self._construir_carro()
         self._construir_sensores()
         try:   # manguera decorativa (ESTO NO HAY CHANCE QUE LO PROGRAMEMOS, de hecho jose no nos dijo nada al respecto) 
             self.manguera = sim.addDrawingObject(sim.drawing_lines, 4, 0, -1, 200, NEGRO)
@@ -125,13 +126,16 @@ class EscenaCoppelia:
         self.poner_q(esc.Q_REPOSO)
 
     def _construir_isla(self):
+        """Isla centrada en el robot, con un carril a cada lado; el surtidor tiene una pantalla por carril."""
         r = self.raiz
-        self._forma("caja", [3.0, 1.0, 0.15], _pose(p=(0, 0.25, 0.075)), CONCRETO, r, "Isla")
+        self._forma("caja", [esc.ISLA_LARGO, esc.ISLA_ANCHO, 0.15], _pose(p=(0, 0, 0.075)), CONCRETO, r, "Isla")
         self._forma("caja", [0.30, 0.30, esc.ALTURA_BASE - 0.15],
                     _pose(p=(0, 0, 0.15 + (esc.ALTURA_BASE - 0.15) / 2)), [0.3, 0.3, 0.32], r, "Pedestal")
         sx, sy, _ = esc.SURTIDOR_POS
         self._forma("caja", [0.50, 0.35, 1.70], _pose(p=(sx, sy, 0.15 + 0.85)), [0.85, 0.85, 0.85], r, "Surtidor")
-        self._forma("caja", [0.40, 0.02, 0.25], _pose(p=(sx, sy - 0.18, 1.35)), [0.1, 0.2, 0.3], r, "Pantalla")
+        for lado in (-1, +1):
+            self._forma("caja", [0.40, 0.02, 0.25], _pose(p=(sx, sy + lado * 0.18, 1.35)), [0.1, 0.2, 0.3], r,
+                        "PantallaIzq" if lado < 0 else "PantallaDer")
 
     def _construir_robot(self):
         sim = self.sim
@@ -168,39 +172,52 @@ class EscenaCoppelia:
         self._barra(F6[:3, 3] + 0.10 * F6[:3, 2], Ft[:3, 3], 0.025, [0.6, 0.6, 0.6], padre)
         self.punta = self._dummy(Ft, "PuntaBoquilla", padre)
 
-    def _construir_carro(self):
-        """El carro se arma alrededor de su marco (origen en la boca de llenado) y luego se mueve
-        moviendo solo el dummy raíz 'Vehiculo'."""
+    def preparar_vehiculo(self, tipo, lado):
+        """Arma el carro del tipo pedido en el carril 'lado' (si no es el que ya está armado).
+        El carro se arma alrededor de su marco (origen en la boca de llenado, a ras del costado)
+        y luego se mueve moviendo solo el dummy raíz 'Vehiculo'."""
+        if self.carro is not None and (tipo, lado) == (self.tipo, self.lado):
+            return
+        if self.carro is not None:
+            self.sim.removeObjects(self.sim.getObjectsInTree(self.carro))
+        v = esc.TIPOS_VEHICULO[tipo]
         c = self._dummy(np.eye(4), "Vehiculo", self.raiz, 0.05)
-        zb = esc.ALTURA_BOCA
-        x0, x1 = esc.CARRO_X_TRASERA, esc.CARRO_X_DELANTERA
-        L, W = x1 - x0, esc.CARRO_ANCHO
-        def P(x, y, z):   # punto en el marco del carro 
-            return (x, y, z)
-        zc = (esc.CARRO_Z_PISO + esc.CARRO_Z_CINTURA) / 2
-        self._forma("caja", [L, W, esc.CARRO_Z_CINTURA - esc.CARRO_Z_PISO],
-                    _pose(p=P((x0 + x1) / 2, -W / 2, zc)), ROJO_CARRO, c, "Carroceria")
-        self._forma("caja", [2.3, W - 0.2, esc.CARRO_Z_TECHO - esc.CARRO_Z_CINTURA],
-                    _pose(p=P(1.25, -W / 2, (esc.CARRO_Z_CINTURA + esc.CARRO_Z_TECHO) / 2)), VIDRIO, c, "Cabina")
+        zb = v["altura_boca"]
+        x0, x1 = v["trasera"], v["delantera"]
+        L, W = x1 - x0, v["ancho"]
+        s = lado          # el carro se extiende desde la boca hacia +y (carril +1) o -y (carril -1)
+        zc = (v["z_piso"] + v["z_cintura"]) / 2
+        self._forma("caja", [L, W, v["z_cintura"] - v["z_piso"]],
+                    _pose(p=((x0 + x1) / 2, s * W / 2, zc)), v["color"], c, "Carroceria")
+        c0, c1 = v["cabina"]
+        self._forma("caja", [c1 - c0, W - 0.2, v["z_techo"] - v["z_cintura"]],
+                    _pose(p=((c0 + c1) / 2, s * W / 2, (v["z_cintura"] + v["z_techo"]) / 2)), VIDRIO, c, "Cabina")
         Ry = _rot_z_hacia([0, 1, 0])
-        for xr in (0.0, 2.70):
-            for yr in (-0.12, -W + 0.12):
-                self._forma("cil", [0.64, 0.64, 0.22], _pose(Ry, P(xr, yr, 0.32)), NEGRO, c)
+        rr = v["radio_rueda"]
+        for xr in v["ejes"]:
+            for yr in (s * 0.12, s * (W - 0.12)):
+                self._forma("cil", [2 * rr, 2 * rr, 0.22], _pose(Ry, (xr, yr, rr)), NEGRO, c)
         # boca de llenado que se representa con un disco oscuro en el costado + tapa abierta
-        self._forma("cil", [0.07, 0.07, 0.006], _pose(Ry, P(0, 0.003, zb)), NEGRO, c, "BocaLlenado")
-        self._forma("caja", [0.003, 0.12, 0.12], _pose(p=P(-0.07, 0.06, zb)), ROJO_CARRO, c, "TapaAbierta")
-        self.boca_dummy = self._dummy(_pose(_rot_z_hacia(esc.EJE_BOCA), (0, 0, zb)), "EjeBoca", c)
-        self.carro = c
+        self._forma("cil", [0.07, 0.07, 0.006], _pose(Ry, (0, -s * 0.003, zb)), NEGRO, c, "BocaLlenado")
+        self._forma("caja", [0.003, 0.12, 0.12], _pose(p=(-0.07, -s * 0.06, zb)), v["color"], c, "TapaAbierta")
+        self.boca_dummy = self._dummy(_pose(_rot_z_hacia(esc.eje_boca(lado)), (0, 0, zb)), "EjeBoca", c)
+        self.carro, self.tipo, self.lado = c, tipo, lado
         self.carroceria = self.sim.getObject("/FuelBot/Vehiculo/Carroceria")
         self._hacer_medible(self.carroceria)
+        self.colocar_vehiculo(8.0, 0.0)        # fuera de la estación hasta que llegue
 
     def _construir_sensores(self):
+        """Un sensor lateral y uno trasero por carril, cada uno sobre un poste."""
         r = self.raiz
-        for nombre, p in (("SensorLateral", esc.SENSOR_LATERAL), ("SensorTrasero", esc.SENSOR_TRASERO)):
-            self._forma("caja", [0.06, 0.06, p[2]], _pose(p=(p[0], p[1], p[2] / 2)), [0.3, 0.3, 0.3], r)
-            h = self._forma("esfera", [2 * esc.RADIO_SENSOR] * 3, _pose(p=p), AMARILLO, r, nombre)
-            self._hacer_medible(h)
-            setattr(self, nombre, h)
+        self.sensores = {}
+        for lado in (-1, +1):
+            sufijo = "Izq" if lado < 0 else "Der"
+            for clave, nombre, p in (("lat", "SensorLateral", esc.sensor_lateral(lado)),
+                                     ("tras", "SensorTrasero", esc.sensor_trasero(lado))):
+                self._forma("caja", [0.06, 0.06, p[2]], _pose(p=(p[0], p[1], p[2] / 2)), [0.3, 0.3, 0.3], r)
+                h = self._forma("esfera", [2 * esc.RADIO_SENSOR] * 3, _pose(p=p), AMARILLO, r, nombre + sufijo)
+                self._hacer_medible(h)
+                self.sensores[(clave, lado)] = h
 
     def _hacer_medible(self, h):
         sim = self.sim
@@ -215,8 +232,15 @@ class EscenaCoppelia:
 
     # ---------------------------------------------------------------- operación
     def colocar_vehiculo(self, x, dy):
-        """Mueve el carro: x = posición de la boca a lo largo, dy = desplazamiento lateral."""
-        self.sim.setObjectPosition(self.carro, [float(x), float(-(esc.DIST_LATERAL_NOMINAL + dy)), 0.0])
+        """Mueve el carro: x = posición de la boca a lo largo, dy = desplazamiento lateral
+        (positivo = más lejos de la isla)."""
+        y = self.lado * (esc.DIST_LATERAL_NOMINAL + dy)
+        self.sim.setObjectPosition(self.carro, [float(x), float(y), 0.0])
+
+    def leer_placa(self):
+        """Lectura de placa simulada: devuelve el modelo del carro, que el sistema buscaría en su
+        base de datos a partir de la placa (como hace Autofuel)."""
+        return self.tipo
 
     def poner_q(self, q):
         for j, qi in zip(self.juntas, q):
@@ -232,12 +256,15 @@ class EscenaCoppelia:
         return np.vstack([M, [0, 0, 0, 1]])
 
     def medir_sensores(self, ruido_mm=0.0, rng=None, respaldo=None):
-        """Distancias sensor -> carrocería calculadas por el simulador (sim.checkDistance),
-        con ruido gaussiano opcional para emular un ultrasonido real.
+        """Distancias sensor -> carrocería de los cuatro sensores, calculadas por el simulador
+        (sim.checkDistance), con ruido gaussiano opcional para emular un ultrasonido real.
+        Devuelve {('lat' o 'tras', lado): distancia}.
         Si checkDistance no está disponible, usa 'respaldo' (lecturas ideales) y lo avisa."""
         rng = rng or np.random.default_rng()
-        lecturas = []
-        for s, ideal in zip((self.SensorLateral, self.SensorTrasero), respaldo or (None, None)):
+        respaldo = respaldo or {}
+        lecturas = {}
+        for clave, s in self.sensores.items():
+            ideal = respaldo.get(clave)
             try:
                 res = self.sim.checkDistance(s, self.carroceria, 0)
                 dist = float(res[1][6])
@@ -248,7 +275,7 @@ class EscenaCoppelia:
                     self.log(f"AVISO: checkDistance falló ({e}); se usan lecturas emuladas")
                     self._aviso_sensor = True
                 dist = ideal
-            lecturas.append(dist + rng.normal(0, ruido_mm / 1000))
+            lecturas[clave] = dist + rng.normal(0, ruido_mm / 1000)
         return lecturas
 
     def marcar_surtido(self, activo):
@@ -270,7 +297,8 @@ class EscenaCoppelia:
         if self.manguera is None or not self.juntas:
             return
         try:
-            a = np.array(esc.SURTIDOR_POS) + [0.0, -0.18, 1.10]
+            lado = self.lado or -1
+            a = np.array(esc.SURTIDOR_POS) + [0.0, lado * 0.18, 1.10]
             b = self.pose_punta() @ np.array([0, 0, -0.17, 1.0])     
             b = b[:3]
             pts = []

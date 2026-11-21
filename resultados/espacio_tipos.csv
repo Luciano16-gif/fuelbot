@@ -1,0 +1,5 @@
+tipo,boca,carril,altura_boca_m,puntos_alcanzables,w_insercion_min,w_insercion_max,w_tramo_min,sen_q3_min,sen_q5_min,hombro_min_m
+compacto,izquierda,-1,0.85,9/9,0.5121,0.7566,0.2413,0.6683,0.8427,0.2812
+sedan,izquierda,-1,0.95,9/9,0.537,0.7672,0.2843,0.7962,0.8427,0.2811
+suv,derecha,1,1.05,9/9,0.5669,0.7725,0.3234,0.9138,0.8427,0.2812
+pickup,derecha,1,1.15,9/9,0.5858,0.7524,0.3472,0.9891,0.8427,0.2812

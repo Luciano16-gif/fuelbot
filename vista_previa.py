@@ -2,7 +2,8 @@
 vista_previa.py: Animación del ciclo SIN CoppeliaSim (matplotlib), a partir del mismo modelo DH.
 Sirve para revisar el movimiento rápido; la simulación oficial es la de CoppeliaSim.
 
-    python vista_previa.py            -> resultados/vista_previa.gif
+    python vista_previa.py            -> resultados/vista_previa.gif (sedán, carril izquierdo)
+    python vista_previa.py pickup     -> otro tipo de vehículo
 """
 import io
 import contextlib
@@ -30,11 +31,12 @@ def caja(ax, centro, tam, color, alpha=1.0):
 
 
 def main():
-    sys.argv = ["x", "--sin-coppelia", "--ciclos", "1", "--litros", "3"]
+    tipo = sys.argv[1] if len(sys.argv) > 1 else "sedan"
+    sys.argv = ["x", "--sin-coppelia", "--ciclos", "1", "--litros", "3", "--tipo", tipo]
     with contextlib.redirect_stdout(io.StringIO()):
         escena, res, ctl = cr.main()
     # solo los cuadros con el carro en su sitio 
-    sel = [i for i, (q, c) in enumerate(escena.cuadros) if abs(c[0]) < 0.6][::3]
+    sel = [i for i, (q, c, _, _) in enumerate(escena.cuadros) if abs(c[0]) < 0.6][::3]
     cuadros = [escena.cuadros[i] for i in sel]
     estados = [ctl.filas[i][2] for i in sel]
 
@@ -43,22 +45,24 @@ def main():
 
     def dibujar(k):
         ax.cla()
-        q, carro = cuadros[k]
+        q, carro, tipo, lado = cuadros[k]
         dx, dy = carro
-        ax.set_xlim(-1.3, 1.3); ax.set_ylim(-1.9, 0.7); ax.set_zlim(0, 1.6)
+        ax.set_xlim(-1.3, 1.3); ax.set_zlim(0, 1.6)
+        ax.set_ylim((-1.9, 0.7) if lado < 0 else (-0.7, 1.9))
         ax.set_box_aspect((2.6, 2.6, 1.6))
-        ax.view_init(elev=20, azim=62)
+        ax.view_init(elev=20, azim=62 if lado < 0 else -62)
         ax.set_xlabel("x [m]"); ax.set_ylabel("y [m]"); ax.set_zlabel("z [m]")
         # isla, pedestal, surtidor
-        caja(ax, (0, 0.25, 0.075), (2.4, 1.0, 0.15), "0.7")
+        caja(ax, (0, 0, 0.075), (2.4, esc.ISLA_ANCHO, 0.15), "0.7")
         caja(ax, (0, 0, 0.42), (0.3, 0.3, 0.55), "0.35")
         sx, sy, _ = esc.SURTIDOR_POS
         caja(ax, (sx, sy, 1.0), (0.5, 0.35, 1.7), "0.85")
         # carro (solo la parte trasera que entra en el cuadro)
-        yc = -(esc.DIST_LATERAL_NOMINAL + dy)
-        x0 = dx + esc.CARRO_X_TRASERA
-        caja(ax, (x0 + 1.2, yc - esc.CARRO_ANCHO / 2, 0.675), (2.4, esc.CARRO_ANCHO, 0.75), "#b0161e", 0.28)
-        pb = esc.posicion_boca(dx, dy)
+        lo, hi = esc.caja_carroceria(dx, dy, tipo, lado)
+        hi = hi.copy()
+        hi[0] = min(hi[0], lo[0] + 2.4)
+        caja(ax, (lo + hi) / 2, hi - lo, esc.TIPOS_VEHICULO[tipo]["color"], 0.28)
+        pb = esc.posicion_boca(dx, dy, tipo, lado)
         ax.scatter(*pb, color="k", s=25)
         # robot
         F = [esc.a_mundo(T) for T in m.fk_frames(q)]
@@ -71,7 +75,7 @@ def main():
         ax.plot(pts[:, 0], pts[:, 1], pts[:, 2], "-o", color="#3466c2", lw=5, ms=5, zorder=10)
         boq = np.array([F[6][:3, 3], F[7][:3, 3]])
         ax.plot(boq[:, 0], boq[:, 1], boq[:, 2], color="#1a9a40", lw=3)
-        ax.set_title(f"Estado: {estados[k]}   (litros: {ctl.filas[sel[k]][-1]:.1f})", fontsize=11)
+        ax.set_title(f"{tipo}. Estado: {estados[k]}   (litros: {ctl.filas[sel[k]][-1]:.1f})", fontsize=11)
         return []
 
     anim = FuncAnimation(fig, dibujar, frames=len(cuadros), interval=1000 * ctl.dt * 3)
