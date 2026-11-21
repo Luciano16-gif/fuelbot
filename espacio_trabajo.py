@@ -3,9 +3,11 @@ espacio_trabajo.py: Análisis del espacio de trabajo del brazo para la tarea de 
 
 Pregunta 1: ¿qué posiciones de la boca son alcanzables con la orientación requerida?
     Para cada posición de la boca en una malla (x, distancia lateral, altura), y en cada carril,
-    se resuelve la IK del vía point y del punto de inserción con la boquilla alineada con el eje
-    del cuello, y se recorre el tramo lineal entre ambos. La posición es alcanzable si la IK
-    converge en todo el tramo, partiendo de la misma semilla que usa el ciclo.
+    se resuelve la IK del vía point con la boquilla alineada con el eje del cuello y se recorre
+    el tramo de inserción en 10 muestras (11 poses en total). La posición es alcanzable si la IK
+    converge en las 11 poses, partiendo de la misma semilla que usa el ciclo. Es un mapa de lo que
+    alcanza la estrategia del controlador: alcanzable=False no prueba que la pose sea imposible
+    para el brazo, porque otra semilla podría encontrar otra solución.
 
 Pregunta 2: ¿qué tan cerca de una singularidad queda el brazo?
     Se usa el índice de manipulabilidad de Yoshikawa, w = sqrt(det(J J^T)) = |det J|, con el
@@ -164,8 +166,8 @@ def figura(cortes, ruta):
         ax.set_ylabel("altura de la boca z [m]")
     cb = fig.colorbar(im, ax=axs, shrink=0.9)
     cb.set_label("manipulabilidad en la inserción  w / w_max")
-    fig.text(0.01, -0.03, "Gris: no alcanzable con la boquilla alineada al cuello. "
-             "Línea discontinua: w / w_max = 0,25. Barras rojas: zona de estacionamiento de cada tipo.",
+    fig.text(0.01, -0.03, "Gris: la IK no converge con la semilla del ciclo y la boquilla alineada al cuello. "
+             "Línea discontinua: w / w_max = 0,25 en la inserción. Barras rojas: zona de estacionamiento de cada tipo.",
              fontsize=8, color="#444")
     fig.savefig(ruta, bbox_inches="tight")
     plt.close(fig)

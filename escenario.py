@@ -43,23 +43,28 @@ INCLINACION_BOCA = np.radians(30)      # el cuello de llenado baja 30° hacia el
 #   trasera / delantera  posición de las defensas
 #   cabina               tramo x que ocupa la cabina (vidrios)
 #   ejes                 posición x de los ejes de las ruedas
+#   tapa_x               centro de la tapa abierta: detrás (-) o delante (+) de la boca, según
+#                        dónde tenga la bisagra el modelo
 # Las alturas (z) van respecto al piso.
+# Con la bisagra detrás de la boca, el tubo de la boquilla cruzaba la tapa en el PTP de los
+# carros del carril +1 (el brazo llega a ese carril por el lado -x de la boca). Por eso los
+# modelos con la boca a la derecha tienen la bisagra delante; ver verificar_colisiones.py.
 TIPOS_VEHICULO = {
     "compacto": dict(boca="izquierda", altura_boca=0.85, trasera=-0.65, delantera=3.15,
                      ancho=1.70, z_piso=0.28, z_cintura=0.95, z_techo=1.45,
-                     cabina=(0.10, 2.10), ejes=(-0.05, 2.40), radio_rueda=0.30,
+                     cabina=(0.10, 2.10), ejes=(-0.05, 2.40), radio_rueda=0.30, tapa_x=-0.07,
                      color=[0.10, 0.35, 0.75]),
     "sedan":    dict(boca="izquierda", altura_boca=0.95, trasera=-0.80, delantera=3.50,
                      ancho=1.80, z_piso=0.30, z_cintura=1.05, z_techo=1.48,
-                     cabina=(0.10, 2.40), ejes=(0.00, 2.70), radio_rueda=0.32,
+                     cabina=(0.10, 2.40), ejes=(0.00, 2.70), radio_rueda=0.32, tapa_x=-0.07,
                      color=[0.70, 0.08, 0.10]),
     "suv":      dict(boca="derecha", altura_boca=1.05, trasera=-0.85, delantera=3.85,
                      ancho=1.90, z_piso=0.40, z_cintura=1.15, z_techo=1.75,
-                     cabina=(-0.70, 2.70), ejes=(0.05, 2.85), radio_rueda=0.36,
+                     cabina=(-0.70, 2.70), ejes=(0.05, 2.85), radio_rueda=0.36, tapa_x=+0.07,
                      color=[0.20, 0.20, 0.22]),
     "pickup":   dict(boca="derecha", altura_boca=1.15, trasera=-1.30, delantera=4.00,
                      ancho=1.95, z_piso=0.50, z_cintura=1.25, z_techo=1.85,
-                     cabina=(0.40, 2.40), ejes=(-0.40, 2.90), radio_rueda=0.38,
+                     cabina=(0.40, 2.40), ejes=(-0.40, 2.90), radio_rueda=0.38, tapa_x=+0.07,
                      color=[0.85, 0.85, 0.80]),
 }
 TIPOS = tuple(TIPOS_VEHICULO)
@@ -109,9 +114,14 @@ SURTIDOR_POS = np.array([-0.95, 0.0, 0.0])
 
 def posicion_boca(dx, dy, tipo, lado=None):
     """Posición REAL de la boca de llenado (mundo) para un carro desplazado (dx, dy).
-    lado: carril donde está el carro; por defecto, el que deja la boca hacia la isla."""
+    lado: carril donde está el carro; por defecto, el que deja la boca hacia la isla.
+    Si el carro está en el otro carril, la boca queda en su costado lejano."""
+    v = TIPOS_VEHICULO[tipo]
     lado = lado_de(tipo) if lado is None else lado
-    return np.array([dx, lado * (DIST_LATERAL_NOMINAL + dy), TIPOS_VEHICULO[tipo]["altura_boca"]])
+    y = lado * (DIST_LATERAL_NOMINAL + dy)
+    if lado != lado_de(tipo):
+        y += lado * v["ancho"]
+    return np.array([dx, y, v["altura_boca"]])
 
 
 def caja_carroceria(dx, dy, tipo, lado=None):

@@ -194,13 +194,22 @@ class EscenaCoppelia:
                     _pose(p=((c0 + c1) / 2, s * W / 2, (v["z_cintura"] + v["z_techo"]) / 2)), VIDRIO, c, "Cabina")
         Ry = _rot_z_hacia([0, 1, 0])
         rr = v["radio_rueda"]
+        n = 0
         for xr in v["ejes"]:
             for yr in (s * 0.12, s * (W - 0.12)):
-                self._forma("cil", [2 * rr, 2 * rr, 0.22], _pose(Ry, (xr, yr, rr)), NEGRO, c)
-        # boca de llenado que se representa con un disco oscuro en el costado + tapa abierta
-        self._forma("cil", [0.07, 0.07, 0.006], _pose(Ry, (0, -s * 0.003, zb)), NEGRO, c, "BocaLlenado")
-        self._forma("caja", [0.003, 0.12, 0.12], _pose(p=(-0.07, -s * 0.06, zb)), v["color"], c, "TapaAbierta")
-        self.boca_dummy = self._dummy(_pose(_rot_z_hacia(esc.eje_boca(lado)), (0, 0, zb)), "EjeBoca", c)
+                n += 1
+                self._forma("cil", [2 * rr, 2 * rr, 0.22], _pose(Ry, (xr, yr, rr)), NEGRO, c, f"Rueda{n}")
+        # boca de llenado: disco oscuro en el costado que dice el modelo + tapa abierta.
+        # En su carril la boca queda hacia la isla; en el carril equivocado, en el costado lejano.
+        if lado == esc.lado_de(tipo):
+            yb, afuera = 0.0, -s
+        else:
+            yb, afuera = s * W, s
+        self._forma("cil", [0.07, 0.07, 0.006], _pose(Ry, (0, yb + afuera * 0.003, zb)), NEGRO, c, "BocaLlenado")
+        self._forma("caja", [0.003, 0.12, 0.12], _pose(p=(v["tapa_x"], yb + afuera * 0.06, zb)),
+                    v["color"], c, "TapaAbierta")
+        eje = np.array([0.0, -afuera * np.cos(esc.INCLINACION_BOCA), -np.sin(esc.INCLINACION_BOCA)])
+        self.boca_dummy = self._dummy(_pose(_rot_z_hacia(eje), (0, yb, zb)), "EjeBoca", c)
         self.carro, self.tipo, self.lado = c, tipo, lado
         self.carroceria = self.sim.getObject("/FuelBot/Vehiculo/Carroceria")
         self._hacer_medible(self.carroceria)
@@ -259,14 +268,18 @@ class EscenaCoppelia:
         """Distancias sensor -> carrocería de los cuatro sensores, calculadas por el simulador
         (sim.checkDistance), con ruido gaussiano opcional para emular un ultrasonido real.
         Devuelve {('lat' o 'tras', lado): distancia}.
-        Si checkDistance no está disponible, usa 'respaldo' (lecturas ideales) y lo avisa."""
+        Si checkDistance falla o no calcula la distancia, usa 'respaldo' (lecturas ideales), lo
+        avisa y lo cuenta en self.emuladas (el ciclo lo guarda en ciclos.csv)."""
         rng = rng or np.random.default_rng()
         respaldo = respaldo or {}
         lecturas = {}
+        self.emuladas = 0
         for clave, s in self.sensores.items():
             ideal = respaldo.get(clave)
             try:
                 res = self.sim.checkDistance(s, self.carroceria, 0)
+                if res[0] != 1:
+                    raise RuntimeError("checkDistance no calculó la distancia (¿cálculo de distancias desactivado?)")
                 dist = float(res[1][6])
             except Exception as e:
                 if ideal is None:
@@ -275,8 +288,24 @@ class EscenaCoppelia:
                     self.log(f"AVISO: checkDistance falló ({e}); se usan lecturas emuladas")
                     self._aviso_sensor = True
                 dist = ideal
+                self.emuladas += 1
             lecturas[clave] = dist + rng.normal(0, ruido_mm / 1000)
         return lecturas
+
+    def tras_detener(self):
+        """CoppeliaSim borra al detener la simulación los objetos creados durante ella, y el carro
+        se arma en cada ciclo. Lo vuelve a armar, estacionado en la posición nominal, para que la
+        escena se pueda guardar con un carro (paso 4 del README)."""
+        if self.tipo is None:
+            return
+        try:
+            existe = self.sim.isHandle(self.carro)
+        except Exception:
+            existe = False
+        if not existe:
+            self.carro = None
+            self.preparar_vehiculo(self.tipo, self.lado)
+        self.colocar_vehiculo(0.0, 0.0)
 
     def marcar_surtido(self, activo):
         try:

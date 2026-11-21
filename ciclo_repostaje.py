@@ -65,7 +65,11 @@ class EscenaSinSimulador:
 
     def medir_sensores(self, ruido_mm=0.0, rng=None, respaldo=None):
         rng = rng or np.random.default_rng()
+        self.emuladas = len(respaldo)          # sin simulador todas las lecturas son emuladas
         return {k: v + rng.normal(0, ruido_mm / 1000) for k, v in respaldo.items()}
+
+    def tras_detener(self):
+        pass
 
     def marcar_surtido(self, activo):
         pass
@@ -76,7 +80,7 @@ class EscenaSinSimulador:
 
 # ----------------------------------------------------------------------------
 CLAVES_CICLO = ["ciclo", "tipo", "carril", "altura_boca_m", "dx_mm", "dy_mm", "decision",
-                "err_sensor_lat_mm", "err_sensor_tras_mm", "err_estim_boca_mm",
+                "sensores_emulados", "err_sensor_lat_mm", "err_sensor_tras_mm", "err_estim_boca_mm",
                 "manip_insercion", "manip_min_lineal", "desv_recta_max_mm",
                 "err_insercion_mm", "err_orientacion_grados", "litros_pedidos", "litros_despachados",
                 "err_volumen_pct", "err_reposo_grados", "cumple"]
@@ -128,8 +132,9 @@ class Controlador:
         2. La boca tiene que quedar hacia la isla: el carril tiene que coincidir con el lado de la
            boca que dice la base de datos para ese tipo.
         3. La semilla de la IK se elige según el carril (q1 girado hacia ese lado).
-        4. El vía point y el punto de inserción tienen que ser alcanzables con la boquilla
-           alineada con el eje del cuello."""
+        4. El vía point y todas las muestras de los tramos lineales de inserción y extracción
+           tienen que ser alcanzables con la boquilla alineada con el eje del cuello. Los tramos
+           se calculan aquí, antes de mover el brazo, y el ciclo ejecuta exactamente esos."""
         lado = esc.detectar_carril(lecturas)
         if lado is None:
             return None, "no se detectó un carro en un solo carril"
@@ -140,12 +145,17 @@ class Controlador:
         eje = esc.eje_boca(lado)
         p_aprox = esc.a_base(p_boca - esc.DIST_APROXIMACION * eje)
         p_inser = esc.a_base(p_boca + esc.PROFUNDIDAD_INSERCION * eje)
-        q_aprox, ok1, it = m.ik(p_aprox, eje, esc.q_semilla(lado))
-        q_inser, ok2, _ = m.ik(p_inser, eje, q_aprox)
-        if not (ok1 and ok2):
+        q_aprox, ok, it = m.ik(p_aprox, eje, esc.q_semilla(lado))
+        if not ok:
+            return None, "boca fuera del espacio de trabajo con la orientación requerida"
+        try:
+            qs_inser, _ = lineal_cartesiana(q_aprox, p_inser, eje, 2.0, self.dt)
+            qs_extr, _ = lineal_cartesiana(qs_inser[-1], p_aprox, eje, 2.0, self.dt)
+        except RuntimeError:
             return None, "boca fuera del espacio de trabajo con la orientación requerida"
         plan = dict(lado=lado, p_boca=p_boca, eje=eje, p_aprox=p_aprox, p_inser=p_inser,
-                    q_aprox=q_aprox, iteraciones=it, manip_insercion=m.manipulabilidad(q_inser))
+                    q_aprox=q_aprox, iteraciones=it, qs_inser=qs_inser, qs_extr=qs_extr,
+                    manip_insercion=m.manipulabilidad(qs_inser[-1]))
         return plan, ""
 
     def ciclo_completo(self, tipo, dx, dy, litros_obj, caudal, ruido_mm, rng, lado=None):
@@ -175,6 +185,7 @@ class Controlador:
         tipo_leido = e.leer_placa()
         ideal = esc.lecturas_ideales(dx, dy, tipo, lado)
         lecturas = e.medir_sensores(ruido_mm, rng, respaldo=ideal)
+        res["sensores_emulados"] = getattr(e, "emuladas", 0)
         plan, motivo = self.decidir_aproximacion(lecturas, tipo_leido)
         self._esperar(0.5)
 
@@ -206,6 +217,16 @@ class Controlador:
         e.log(f"Ciclo {self.ciclo} {'CUMPLE' if res['cumple'] else 'NO CUMPLE'} el objetivo general")
         return res
 
+    def _ejecutar_recta(self, qs, p_aprox, u):
+        """Ejecuta un tramo lineal y devuelve la desviación de la punta (según el simulador)
+        respecto a la recta ideal que pasa por el vía point con dirección u, en cada muestra."""
+        desv = []
+        for q in qs:
+            self._paso(q)
+            d0 = esc.a_base(self.e.pose_punta()[:3, 3]) - p_aprox
+            desv.append(np.linalg.norm(d0 - np.dot(d0, u) * u))
+        return desv
+
     def _repostar(self, plan, p_boca_real, litros_obj, caudal, res):
         e = self.e
         eje, p_aprox, p_inser = plan["eje"], plan["p_aprox"], plan["p_inser"]
@@ -215,20 +236,11 @@ class Controlador:
         e.log(f"Aproximación PTP (IK en {plan['iteraciones']} iteraciones)")
         self._ejecutar(ptp_articular(e.leer_q(), plan["q_aprox"], 3.0, self.dt))
 
-        # línea recta sobre el eje de la boca
+        # línea recta sobre el eje de la boca (tramo calculado en la decisión)
         self.estado = "INSERCION"
         e.log("Inserción lineal")
-        qs, ps = lineal_cartesiana(e.leer_q(), p_inser, eje, 2.0, self.dt)
-        desv = []
         u = (p_inser - p_aprox) / np.linalg.norm(p_inser - p_aprox)
-        for q, p_des in zip(qs, ps):
-            self._paso(q)
-            p_real = esc.a_base(e.pose_punta()[:3, 3])
-            # desviación respecto a la recta ideal
-            d0 = p_real - p_aprox
-            desv.append(np.linalg.norm(d0 - np.dot(d0, u) * u))
-        res["desv_recta_max_mm"] = round(float(max(desv)) * 1000, 3)
-        res["manip_min_lineal"] = round(min(m.manipulabilidad(q) for q in qs), 4)
+        desv = self._ejecutar_recta(plan["qs_inser"], p_aprox, u)
 
         # error de inserción contra la boca
         T_sim = e.pose_punta()
@@ -252,8 +264,9 @@ class Controlador:
 
         # misma recta, de vuelta al vía point para la extraccion
         self.estado = "EXTRACCION"
-        qs, _ = lineal_cartesiana(e.leer_q(), p_aprox, eje, 2.0, self.dt)
-        self._ejecutar(qs)
+        desv += self._ejecutar_recta(plan["qs_extr"], p_aprox, u)
+        res["desv_recta_max_mm"] = round(float(max(desv)) * 1000, 3)
+        res["manip_min_lineal"] = round(min(m.manipulabilidad(q) for q in plan["qs_inser"] + plan["qs_extr"]), 4)
 
         # PTP de vuelta a la configuración de reposo
         self.estado = "REPOSO"
@@ -285,6 +298,14 @@ def argumentos_comunes(ap):
     ap.add_argument("--dt", type=float, default=0.05, help="paso de control [s]")
     ap.add_argument("--ruido-mm", type=float, default=1.0, help="ruido del sensor (desv. estándar)")
     ap.add_argument("--semilla", type=int, default=7)
+
+
+def detener_coppelia(sim, escena):
+    """Detiene la simulación, espera a que pare y vuelve a armar el carro (ver tras_detener)."""
+    sim.stopSimulation()
+    while sim.getSimulationState() != sim.simulation_stopped:
+        time.sleep(0.05)
+    escena.tras_detener()
 
 
 def conectar_coppelia():
@@ -337,7 +358,7 @@ def main():
                                                  args.ruido_mm, rng, lado))
     finally:
         if sim is not None:
-            sim.stopSimulation()
+            detener_coppelia(sim, escena)
 
     # ---- guardar
     cab_pasos = (["ciclo", "t_s", "estado"] + [f"q{i}_grados" for i in range(1, 7)]
@@ -359,6 +380,8 @@ def main():
     n_ok = sum(r["cumple"] for r in resultados)
     rechazados = sum(r["decision"] != "repostar" for r in resultados)
     print(f"Ciclos que cumplen: {n_ok}/{len(resultados)}")
+    if not args.sin_coppelia and any(r["sensores_emulados"] for r in resultados):
+        print("AVISO: hubo lecturas de sensores emuladas (columna sensores_emulados de ciclos.csv)")
     if rechazados:
         print(f"Ciclos en los que el robot decidió no repostar: {rechazados}")
     print(f"Error máximo modelo DH vs. simulador en toda la corrida: {ctl.err_max_modelo_sim:.4f} mm")

@@ -5,15 +5,18 @@ durante el ciclo de repostaje.
 Corre los mismos ciclos que ciclo_repostaje.py (misma semilla, mismos tipos y posiciones del carro)
 y, en cada paso, mide con sim.checkDistance la distancia mínima entre tres pares de grupos:
 
-    brazo_carro      todo el brazo menos la boquilla  vs. el carro (carrocería, cabina, ruedas, boca, tapa)
-    boquilla_carro   el tubo de la boquilla           vs. el carro
-    robot_estacion   todo el brazo con la boquilla     vs. surtidor, pantalla y postes de sensores
+    brazo_carro         todo el brazo menos la boquilla  vs. el carro (carrocería, cabina, ruedas, boca, tapa)
+    boquilla_carro      el tubo de la boquilla           vs. el carro completo
+    boquilla_exterior   el tubo de la boquilla           vs. el carro sin la carrocería ni el disco de la boca
+                                                         (cabina, ruedas y tapa)
+    robot_estacion      todo el brazo con la boquilla     vs. surtidor, pantallas y postes de sensores
 
 El pedestal y la losa de la isla no se incluyen en la estación porque el brazo está montado sobre ellos.
 
 Ojo: la carrocería es un bloque macizo, sin cuello hueco. Durante INSERCION, SURTIDO y EXTRACCION
-la boquilla atraviesa el bloque por diseño, así que en esos estados boquilla_carro vale 0 y no indica
-un choque real. En los demás estados sí cuenta.
+la boquilla atraviesa el bloque y el disco de la boca por diseño, así que en esos estados
+boquilla_carro vale 0 y no indica un choque real. En los demás estados sí cuenta. boquilla_exterior
+no tiene esa excepción: un contacto del tubo con la tapa, la cabina o las ruedas cuenta siempre.
 
 Uso (con CoppeliaSim abierto):
     python verificar_colisiones.py --ciclos 20
@@ -28,9 +31,10 @@ import numpy as np
 
 import modelo_dh as m
 import escenario as esc
-from ciclo_repostaje import Controlador, conectar_coppelia, sortear_ciclos, argumentos_comunes
+from ciclo_repostaje import (Controlador, conectar_coppelia, detener_coppelia, sortear_ciclos,
+                             argumentos_comunes)
 
-PARES = ("brazo_carro", "boquilla_carro", "robot_estacion")
+PARES = ("brazo_carro", "boquilla_carro", "boquilla_exterior", "robot_estacion")
 ESTADOS_BOQUILLA_DENTRO = ("INSERCION", "SURTIDO", "EXTRACCION")
 
 
@@ -60,6 +64,7 @@ class MedidorHolgura:
         self.carro_actual = None
         self.pares = {"brazo_carro": ("brazo", "carro"),
                       "boquilla_carro": ("boquilla", "carro"),
+                      "boquilla_exterior": ("boquilla", "carro_exterior"),
                       "robot_estacion": ("robot", "estacion")}
         self.nombres = {tubo: "TuboBoquilla"}
 
@@ -85,12 +90,17 @@ class MedidorHolgura:
         """El carro se arma de nuevo cuando cambia el tipo: rehace su colección."""
         if self.e.carro == self.carro_actual:
             return
-        if "carro" in self.col:
-            self.sim.destroyCollection(self.col["carro"])
+        for k in ("carro", "carro_exterior"):
+            if k in self.col:
+                self.sim.destroyCollection(self.col[k])
         carro = set(self.sim.getObjectsInTree(self.e.carro, self.sim.object_shape_type, 0))
         self._hacer_medibles(carro)
+        atravesadas = {self.sim.getObject("/FuelBot/Vehiculo/Carroceria"),
+                       self.sim.getObject("/FuelBot/Vehiculo/BocaLlenado")}
         self.grupos["carro"] = carro
+        self.grupos["carro_exterior"] = carro - atravesadas
         self.col["carro"] = self._coleccion(carro)
+        self.col["carro_exterior"] = self._coleccion(carro - atravesadas)
         self.carro_actual = self.e.carro
 
     def _coleccion(self, formas):
@@ -115,6 +125,9 @@ class MedidorHolgura:
         res = {}
         for par, (a, b) in self.pares.items():
             r = self.sim.checkDistance(self.col[a], self.col[b], 0)
+            if r[0] != 1:
+                raise RuntimeError(f"checkDistance no calculó la distancia de {par} "
+                                   "(¿cálculo de distancias desactivado en CoppeliaSim?)")
             res[par] = (float(r[1][6]), r[2][0], r[2][1])
         return res
 
@@ -150,7 +163,7 @@ def main():
         for tipo, dx, dy, lado in ciclos:
             ctl.ciclo_completo(tipo, dx, dy, args.litros, args.caudal, args.ruido_mm, rng, lado)
     finally:
-        sim.stopSimulation()
+        detener_coppelia(sim, escena)
 
     # ---- guardar
     filas = []
@@ -165,7 +178,7 @@ def main():
     # ---- resumen: peor caso de cada estado y par en todos los ciclos
     estados = list(dict.fromkeys(e for (_, e, _) in ctl.minimos))
     print("\n========== HOLGURA MÍNIMA EN TODOS LOS CICLOS [mm] ==========")
-    print(f"{'estado':<13}" + "".join(f"{p:>16}" for p in PARES))
+    print(f"{'estado':<13}" + "".join(f"{p:>19}" for p in PARES))
     choques = []
     for e in estados:
         celdas = []
@@ -173,7 +186,7 @@ def main():
             casos = [(v, c) for (c, e2, p2), v in ctl.minimos.items() if e2 == e and p2 == p]
             (d, na, nb), c = min(casos, key=lambda x: x[0][0])
             marca = "*" if (p == "boquilla_carro" and e in ESTADOS_BOQUILLA_DENTRO) else ""
-            celdas.append(f"{d * 1000:>15.1f}{marca or ' '}")
+            celdas.append(f"{d * 1000:>18.1f}{marca or ' '}")
             if d <= 0 and not marca:
                 choques.append((c, e, p, na, nb))
         print(f"{e:<13}" + "".join(celdas))

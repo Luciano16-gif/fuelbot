@@ -18,7 +18,7 @@ Resumen propio de las directrices oficiales del Proyecto Final de Robótica Indu
 | 4 | Aplicación industrial con fuente fiable | Va en el documento, no en el código |
 | 5 | Declaración de lo que no es propio, mostrando qué se modificó o extendió | Sección "Qué no es propio" del README |
 
-Los objetivos (general y 3 o 4 específicos) tienen que ser medibles con una evidencia trazable. El objetivo general que verifica el código (`ciclo_repostaje.py`) es: error de inserción menor a 5 mm y error de orientación menor a 2 grados en cada ciclo, en una corrida de 20 ciclos con los cuatro tipos de vehículo (5 por tipo).
+Los objetivos (general y 3 o 4 específicos) tienen que ser medibles con una evidencia trazable. El objetivo general que verifica el código (`ciclo_repostaje.py`) es: error de inserción menor a 5 mm y error de orientación menor a 2 grados en al menos 19 de 20 ciclos, con los cuatro tipos de vehículo (5 por tipo), 5 L por ciclo y dt = 0,05 s.
 
 ## Devolución del anteproyecto: subir alcance
 

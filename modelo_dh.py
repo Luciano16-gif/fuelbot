@@ -89,9 +89,9 @@ def jacobiano(q):
 
 def manipulabilidad(q):
     """Índice de manipulabilidad de Yoshikawa: w = sqrt(det(J J^T)).
-    Con J cuadrada (6x6) es |det J|. Vale 0 en una singularidad y crece al alejarse de ella."""
-    J = jacobiano(q)
-    return float(np.sqrt(max(np.linalg.det(J @ J.T), 0.0)))
+    Con J cuadrada (6x6) es |det J|, que se calcula directo porque det(J J^T) pierde
+    precisión cerca de una singularidad. Vale 0 en una singularidad y crece al alejarse de ella."""
+    return float(abs(np.linalg.det(jacobiano(q))))
 
 
 def error_pose(T_actual, p_obj, eje_obj):

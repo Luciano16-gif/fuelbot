@@ -86,4 +86,8 @@ calcula el índice de manipulabilidad w = |det J| (normalizado con su máximo pa
 - Parámetros DH del UR5: publicados por Universal Robots.
 - Cliente `coppeliasim-zmqremoteapi-client`: Coppelia Robotics.
 - `verificar_modelo.py` usa Robotics Toolbox for Python (P. Corke) solo como referencia de comparación.
+- Índice de manipulabilidad (`modelo_dh.manipulabilidad`, `espacio_trabajo.py`): Yoshikawa, T. (1985),
+  *Manipulability of robotic mechanisms*. La factorización de det J del UR5 en sus tres factores de
+  singularidad es conocida para esa geometría; la verificamos numéricamente contra nuestro jacobiano.
+- Medidas de los tipos de vehículo: aproximadas por nosotros, no vienen de fichas técnicas.
 - Todo lo demás (escena, construcción del brazo, IK, trayectorias, lógica del ciclo, verificación) lo verificaremos nosotros.
