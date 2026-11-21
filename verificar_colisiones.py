@@ -204,8 +204,9 @@ def main():
         for c in choques:
             print(f"  ciclo {c[0]}, {c[1]}, {c[2]}: {c[3]} con {c[4]}")
     else:
-        print("\nSin contactos en ningún ciclo (fuera de la carrocería y la boca, que la boquilla "
-              "atraviesa por diseño en la inserción).")
+        print("\nSin contactos en ningún ciclo. La única excepción es la boquilla con la carrocería y el "
+              "disco de la boca durante INSERCION, SURTIDO y EXTRACCION, que atraviesa por diseño; "
+              "en los demás estados ese contacto sí contaría.")
     print("Detalle por ciclo en resultados/colisiones.csv")
     rearmar_carro(sim, escena)
 

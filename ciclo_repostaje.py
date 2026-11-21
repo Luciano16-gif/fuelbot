@@ -301,16 +301,22 @@ def argumentos_comunes(ap):
 
 
 def detener_coppelia(sim, espera_max_s=10.0):
-    """Detiene la simulación y espera, como mucho espera_max_s, a que pare.
-    Devuelve True si paró."""
-    sim.stopSimulation()
-    limite = time.time() + espera_max_s
-    while sim.getSimulationState() != sim.simulation_stopped:
-        if time.time() > limite:
-            print("AVISO: la simulación no terminó de detenerse")
-            return False
-        time.sleep(0.05)
-    return True
+    """Detiene la simulación y espera a que pare. Devuelve True si paró.
+    Nunca lanza excepciones: se llama antes de guardar los CSV y un fallo aquí no debe hacer
+    perder los resultados de una corrida terminada. espera_max_s acota el sondeo del estado;
+    no puede acotar una llamada remota que se quede colgada."""
+    try:
+        sim.stopSimulation()
+        limite = time.time() + espera_max_s
+        while sim.getSimulationState() != sim.simulation_stopped:
+            if time.time() > limite:
+                print("AVISO: la simulación no terminó de detenerse")
+                return False
+            time.sleep(0.05)
+        return True
+    except Exception as e:
+        print(f"AVISO: no se pudo detener la simulación ({e}); se guardan los resultados igual")
+        return False
 
 
 def rearmar_carro(sim, escena):
