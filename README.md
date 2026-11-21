@@ -55,6 +55,8 @@ python ciclo_repostaje.py --sin-coppelia --ciclos 10
 3. Para la corrida de verificación del objetivo general: `python ciclo_repostaje.py --ciclos 20`
    (5 ciclos por tipo de vehículo). Para medir la holgura del brazo con el carro y la estación en esos
    mismos ciclos: `python verificar_colisiones.py --ciclos 20` (guarda `resultados/colisiones.csv`).
+   La evidencia del rechazo por carril equivocado se guardó aparte, en `resultados/ciclos_carril_equivocado.csv`
+   (corrida de `--ciclos 4 --carril-equivocado 3`).
 4. Para guardar la escena construida: *File → Save scene as…* (útil para entregar el `.ttt`).
 
 Opciones: `--tipo suv` (un solo tipo), `--carril-equivocado 3` (en el ciclo 3 el carro se estaciona con
