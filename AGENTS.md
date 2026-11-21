@@ -19,6 +19,7 @@ Guía para agentes de código (Claude, Codex, etc.) que trabajen en este repo. E
 - `vista_previa.py`: animación en matplotlib, sin simulador.
 - `espacio_trabajo.py`: alcanzabilidad de la boca con la orientación requerida y manipulabilidad en una malla de posiciones. No necesita CoppeliaSim; tarda unos 3 minutos y escribe `resultados/espacio_trabajo.csv`, `espacio_tipos.csv` y `espacio_trabajo.png`.
 - `verificar_colisiones.py`: holgura mínima del brazo con el carro y la estación (`sim.checkDistance`) en cada estado del ciclo. Solo corre con CoppeliaSim abierto y escribe `resultados/colisiones.csv`.
+- `fuelbot.ttt`: copia guardada de la escena que construye `escena_coppelia.py` (para la entrega). Los scripts no la usan: siempre reconstruyen la escena desde código. Si cambia la escena, hay que volver a guardarla desde CoppeliaSim.
 - `resultados/`: CSV que genera `ciclo_repostaje.py`. `ciclos_carril_equivocado.csv` es la corrida real de `--ciclos 4 --carril-equivocado 3` (evidencia del rechazo); no se regenera con la corrida de 20 ciclos.
 
 ## Cómo verificar cambios

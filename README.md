@@ -58,6 +58,9 @@ python ciclo_repostaje.py --sin-coppelia --ciclos 10
    La evidencia del rechazo por carril equivocado se guardó aparte, en `resultados/ciclos_carril_equivocado.csv`
    (corrida de `--ciclos 4 --carril-equivocado 3`).
 4. Para guardar la escena construida: *File → Save scene as…* (útil para entregar el `.ttt`).
+   `fuelbot.ttt` es esa escena, guardada después de la corrida real: la armó `escena_coppelia.py`,
+   no es una escena de demostración. Se puede abrir para mirarla, pero los scripts siempre la
+   vuelven a construir desde código.
 
 Opciones: `--tipo suv` (un solo tipo), `--carril-equivocado 3` (en el ciclo 3 el carro se estaciona con
 la boca del lado contrario, para ver que el robot decide no repostar), `--litros 5`, `--caudal 0.6`,
